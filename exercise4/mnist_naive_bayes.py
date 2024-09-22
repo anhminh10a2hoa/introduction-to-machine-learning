@@ -1,44 +1,69 @@
 import numpy as np
 import tensorflow as tf
-import sys
 
-# Load MNIST dataset using TensorFlow
-mnist = tf.keras.datasets.mnist
+# Function to compute classification accuracy
+def class_acc(pred, gt):
+    correct = np.sum(pred == gt)
+    total = len(gt)
+    accuracy = correct / total
+    return accuracy
 
-# Argument to choose between original MNIST and Fashion MNIST
-dataset_type = sys.argv[1] if len(sys.argv) > 1 else 'original'
+# Load MNIST dataset
+def load_mnist():
+    mnist = tf.keras.datasets.mnist
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0  # Normalize
+    return (x_train, y_train), (x_test, y_test)
 
-if dataset_type == 'fashion':
-    mnist = tf.keras.datasets.fashion_mnist
+# Function to reshape the data
+def flatten_data(x):
+    return x.reshape(len(x), -1)  # Flatten 28x28 into 784
 
-(x_train, y_train), (x_test, y_test) = mnist.load_data()
+# Naive Bayes training (computes mean and variance)
+def naive_bayes_train(x_train, y_train):
+    classes = np.unique(y_train)
+    mean, var = [], []
+    
+    for c in classes:
+        x_class = x_train[y_train == c]
+        mean.append(np.mean(x_class, axis=0))
+        var.append(np.var(x_class, axis=0) + 0.001)  # Avoid zero variance by adding 0.001
+    
+    return np.array(mean), np.array(var)
 
-# Reshape the data to vectors of size 784
-x_train = x_train.reshape(x_train.shape[0], -1)
-x_test = x_test.reshape(x_test.shape[0], -1)
+# Naive Bayes prediction (log likelihood calculation)
+def naive_bayes_predict(x_test, mean, var):
+    log_likelihoods = []
+    for c in range(10):
+        log_likelihood = -0.5 * np.sum(np.log(2 * np.pi * var[c]))
+        log_likelihood -= 0.5 * np.sum(((x_test - mean[c]) ** 2) / var[c], axis=1)
+        log_likelihoods.append(log_likelihood)
+    
+    return np.argmax(log_likelihoods, axis=0)
 
-# Add small noise to prevent zero variance
-x_train = x_train + np.random.normal(loc=0.0, scale=0.1, size=x_train.shape)
+# Function to add noise to the data
+def add_noise(x_train, noise_level=0.1):
+    noise = np.random.normal(loc=0.0, scale=noise_level, size=x_train.shape)
+    return x_train + noise
 
-# Calculate mean and variance for each class
-means = np.zeros((10, x_train.shape[1]))
-variances = np.zeros((10, x_train.shape[1]))
+# Main function to train and evaluate the Naive Bayes classifier
+def main():
+    # Load and preprocess data
+    (x_train, y_train), (x_test, y_test) = load_mnist()
+    x_train_flat, x_test_flat = flatten_data(x_train), flatten_data(x_test)
+    
+    # Optionally, add noise to training data
+    x_train_noisy = add_noise(x_train_flat, noise_level=0.1)
+    
+    # Train Naive Bayes classifier
+    mean, var = naive_bayes_train(x_train_noisy, y_train)
+    
+    # Predict on test data
+    y_pred = naive_bayes_predict(x_test_flat, mean, var)
+    
+    # Compute accuracy using the class_acc function
+    accuracy = class_acc(y_pred, y_test)
+    print(f"Naive Bayes Classifier accuracy: {accuracy * 100:.2f}%")
 
-for i in range(10):
-    class_i = x_train[y_train == i]
-    means[i, :] = np.mean(class_i, axis=0)
-    variances[i, :] = np.var(class_i, axis=0) + 0.001  # Add small constant to variance
-
-# Naive Bayes classification
-def naive_bayes_predict(x):
-    log_probs = np.zeros(10)
-    for i in range(10):
-        log_prob = -0.5 * np.sum(np.log(2 * np.pi * variances[i])) \
-                   - 0.5 * np.sum(((x - means[i]) ** 2) / variances[i], axis=1)
-        log_probs[i] = log_prob
-    return np.argmax(log_probs, axis=0)
-
-# Predict and evaluate accuracy
-y_pred = np.array([naive_bayes_predict(x) for x in x_test])
-accuracy = np.mean(y_pred == y_test)
-print(f"Naive Bayes Classification accuracy is {accuracy * 100:.2f}%")
+if __name__ == "__main__":
+    main()
